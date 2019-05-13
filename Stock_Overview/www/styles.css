@@ -1,0 +1,16 @@
+table {
+  table-layout: fixed;
+  white-space: normal!important;
+}
+
+td {
+  word-wrap: break-word;
+}
+
+#table2 .dataTables_scrollBody {
+  height: 175px !important;
+}
+
+.sidebar-menu > li {
+white-space: normal;
+}

@@ -1,0 +1,341 @@
+---
+title: "Stock Analysis and Forecasting"
+author: "Mary Anna Kivenson"
+date: "5/4/2019"
+output:
+  html_document:
+    highlight: pygments
+    theme: united
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This project will use a trading data API to obtain historical stock price data to report on stock metrics and performace. The focus of this analysis will be to:
+
+- Import and tidy the stock trading API data for a stock of choice
+- Visualize trends and historical prices of the selected stock
+- Investigate google trends interest over time in the selected stock
+- Perform sentiment analysis on recent news articles about the selected stock
+- Create a time series forecasting model that uses historical stock prices to predict future trends
+- Develop a Shiny application that condenses this information into a single dashboard for any selected stock
+
+### Libraries Used
+
+The following libraries were used for data clean-up, interacting with APIs, translating JSON to a datatable, text mining, web scraping, visualization, and forecasting.
+
+```{r libraries, message=FALSE, warning=FALSE}
+#data cleanup
+library(dplyr)
+library(tidyr)
+library(magrittr)
+library(stringr)
+library(lubridate)
+library(data.table)
+
+#API and json
+library(httr)
+library(jsonlite)
+library(config)
+
+#Web Scraping
+library(rvest)
+
+#Visualization
+library(plotly)
+library(ggplot2)
+library(DT)
+
+#Data
+library(devtools)
+library(gtrendsR)
+
+#Text Analysis
+library(tidytext)
+library(wordcloud)
+library(RColorBrewer)
+
+#Forecasting
+library(quantmod)
+library(forecast)
+library(tseries)
+library(prophet)
+```
+
+## Import Historical Stock Data
+
+To obtain historical stock data, the World Trading Data API is used. This report allows for the selection of any stock for analysis by changing the ticker saved to the 'symbol' variable. For the purpose of this project, the company Amazon (AMZN) is used.
+
+```{r stock-selection}
+symbol <- 'AMZN'
+```
+
+### World Trading Data API
+
+The World Trading Data API url inputs the selected symbol, the date range that is being requested, and a custom API token. To obtain a unique API token, please visit the [World Trading Data API Documentation](https://www.worldtradingdata.com/documentation).
+
+```{r api-set-up, warning=FALSE}
+config <- config::get()
+date_from = today()-dyears(5)
+
+URL <- paste0("https://www.worldtradingdata.com/api/v1/history?symbol=",symbol,
+              "&sort=newest&date_from=",date_from,
+              "&api_token=",config$stock_apikey)
+results <- GET(url = URL)
+```
+
+
+To extract the content from the results, the jsonlite package is used. The output of this file is one row with thousands of columns, so data pre-processing is required.
+
+
+```{r api-json, message=FALSE, warning=FALSE}
+content <- content(results, "text")
+content %<>%
+  fromJSON(flatten = TRUE) %>% #Flatten
+  as.data.frame() #Make dataframe
+
+#Number of columns
+ncol(content)
+```
+
+### Stock Data Pre-Processing
+
+To tidy the stock data, all price and volume data fields are gathered and arranged into a long datatable. Regular expressions, column filtering, and data type alterations are also done.
+
+```{r cleanup, warning=FALSE}
+#gather
+stock <- gather(content, "time","value",2:ncol(content)) 
+stock$value <- as.numeric(stock$value)
+
+#extract the date and metric into a new field
+stock$date <- as_date(str_extract(string = stock$time, pattern = "\\d{4}.\\d{2}.\\d{2}"))
+stock$metric <- str_extract(string = stock$time, pattern = "open|close|high|low|volume")
+
+#exclude the unneccessary column and spread metric columns
+stock %<>%
+  select(c(name, date, metric, value)) %>%
+  spread(metric, value)
+
+datatable(stock)
+```
+
+
+## Visualization
+
+Now that the stock dataset is tidied, a visualization of the price and volume time series can be created. For greater interactivity, plotly is used for this visualization.
+
+```{r visual}
+p1 <- stock %>%
+  plot_ly(x = ~date,
+          type = "candlestick", 
+          open = ~open, 
+          close = ~close, 
+          high = ~high,
+          low = ~low,
+          name = "price") %>%
+  layout(
+    xaxis = list(
+      rangeselector = list(
+        buttons = list(
+          list(
+            count = 1,
+            label = "1 mo",
+            step = "week",
+            stepmode = "backward"),
+          list(
+            count = 3,
+            label = "3 mo",
+            step = "month",
+            stepmode = "backward"),
+          list(
+            count = 6,
+            label = "6 mo",
+            step = "month",
+            stepmode = "backward"),
+          list(
+            count = 1,
+            label = "1 yr",
+            step = "year",
+            stepmode = "backward"),
+          list(
+            count = 3,
+            label = "3 yr",
+            step = "year",
+            stepmode = "backward"),
+          list(step = "all"))),
+      rangeslider = list(visible = FALSE)),
+         yaxis = list(title = "Price ($)",
+                      showgrid = TRUE,
+                      showticklabels = TRUE))
+p2 <- stock %>%
+  plot_ly(x=~date, y=~volume, type='bar', name = "Volume") %>%
+  layout(yaxis = list(title = "Volume"))
+
+p <- subplot(p1, p2, heights = c(0.7,0.3), nrows=2,
+             shareX = TRUE, titleY = TRUE) %>%
+  layout(title = paste0(symbol))
+p
+```
+
+
+## Google Trends
+
+Economic indicators are excellent predictors of future stock price, but what about Google search interest in the stock? Using the gtrendsr package, the following code queries interest over time for the selected stock over the previous five years and creates a visualization using plotly. 
+
+```{r trends-api, message=FALSE, warning=FALSE}
+trends <- gtrends(keyword = symbol, geo = "US", onlyInterest = TRUE)
+trends <- trends$interest_over_time %>%
+  as_data_frame() %>%
+  select(c(date, hits, keyword))
+trends$date <- as_date(ceiling_date(trends$date, unit = "weeks", change_on_boundary = NULL,
+                            week_start = getOption("lubridate.week.start", 1)))
+trends %>%  
+  plot_ly(x=~date, y=~hits, mode = 'lines', name = "Google Search Trends") %>%
+  layout(title = paste0("Interest over Time: ",symbol), yaxis = list(title = "hits"))
+```
+
+### Interest vs Price
+
+Using the google trends dataset, it is now possible to view the relationship between interest over time ('hits') and stock performance. To do this, a left join is used to combine trend and stock data by date. The outcome of the join is then used to plot the relationship between hits and stock close price (for Amazon, this relationship is somewhat linear).
+
+```{r trends-vs-price, message=FALSE, warning=FALSE}
+trends %>%
+  left_join(stock, by = "date") %>%
+  select(one_of(c("date", "hits", "close"))) %>%
+  drop_na() %>%
+  ggplot(aes(hits, close)) + geom_point(color="blue") + geom_smooth(model=lm, color = "black") +
+  labs(title =paste0(symbol,": Relationship between Hits and Close Stock Price"))
+```
+
+## Recent Stock News
+
+News articles provide excellent insight on the performance of each stock. The next step in this stock performance report is to import and perform sentiment analysis on recent news articles about the selected company.
+
+### Google News API
+
+To obtain news article data, the Google News API is used. The Google News API url inputs the company name (which is scraped from Marketwatch using the selected symbol). The date range inputed into the url requests the last 30 days of news article data. Finally, articles are sorted by relevance and 100 articles are requested using a custom API key. To obtain a unique API token, please visit the [Google News API Documentation](https://newsapi.org/docs). Once the API request is successful, jsonlite is used to transform the json data from the API into a dataframe.
+
+```{r news-api}
+##get company name using web-scraping
+url_overview = paste0("https://www.marketwatch.com/investing/stock/",symbol,"/profile")
+var_overview = read_html(url_overview)
+company <-  var_overview %>% 
+  html_nodes('#instrumentname') %>%
+  html_text() %>%
+  as.character()
+
+#news API Query
+url_news = paste0("https://newsapi.org/v2/everything?q=",
+                  str_replace_all(company,pattern = " ", replacement = "%20"),
+                  "&from=",today()-ddays(29), #last 30 days
+                  "&sortBy=relevance&pageSize=100&language=en&apiKey=",config$news_apikey)
+
+#API json to datatable
+results <- GET(url = url_news)
+news <- content(results, "text")
+news %<>%
+  fromJSON(flatten = TRUE) %>% #flatten
+  as.data.frame() %>% #make dataframe
+  select(c(articles.title, articles.description, articles.content, articles.publishedAt))
+datatable(news)
+```
+
+### News Sentiment Analysis
+
+Now that 100 recent news articles about the selected stock are available, text mining and sentiment analysis can be performed on this analysis.
+
+#### Word Cloud 
+
+The first step is to unnest each word in the article description, allowing for a 'bag of words' sentiment analysis approach. For a quick visualization of the most frequently used words, a word cloud is created.
+
+```{r news-sentiment-analysis, message=FALSE, warning=FALSE}
+news_words <- news %>%
+  select(c("articles.title","articles.description", "articles.content", "articles.publishedAt")) %>%
+  unnest_tokens(word, articles.description) %>%
+  filter(!word %in% append(stop_words$word, values = "chars"), str_detect(word, "^[a-z']+$"))
+news_words$date = as_date(news_words$articles.publishedAt)
+
+words_only <- news_words %>%
+  count(word, sort =TRUE)
+
+set.seed(1)
+wordcloud(words = words_only$word, freq = words_only$n, scale=c(5,.5), max.words=50, colors=brewer.pal(8, "Dark2"))
+```
+
+#### News Sentiment over Time
+
+To perform basic sentiment analysis, the afinn sentiment lexicon is used. This lexicon assigns scores to each word on a scale of -5 to 5. To view news sentiment about the selected company over the past month, the dataset is grouped by article and date and the score is summarised by the mean for each group. 
+```{r nrc, message=FALSE, warning=FALSE}
+afinn <- get_sentiments("afinn")
+
+sentiment_summary <- news_words %>%
+  left_join(afinn) %>%
+  filter(!is.na(score)) %>%
+  group_by(articles.title, date) %>%
+  summarise(score = mean(score)) %>%
+  mutate(sentiment = ifelse(score>0, "positive","negative")) 
+
+datatable(sentiment_summary)
+ggplot(sentiment_summary, aes(date, score)) + geom_bar(stat = "identity", aes(fill=sentiment))  + ggtitle(paste0(symbol, ": News Sentiment Over Time")) 
+```
+
+
+## Time Series Forecasting
+
+In the previous steps, various factors such as news sentiment and Google trends were analyzed. In this step, the Prophet API will be used to forecast future prices for the selected stock. 
+
+### Using Prophet
+
+Prophet is a software created by Facebook for forecasting time series data. For more information, please visit the [Prophet API Documentation](https://facebook.github.io/prophet/docs/quick_start.html#r-api). In this next step, the data is pre-processed to fit the requirements of Prophet and a prediction is created (accounting for the regular stock gaps on weekends). The output of the forecast is the date, forecasted close price, and the lower and upper confidence intervals based on an 80% confidence levels.
+
+```{r prophet, message=FALSE, warning=FALSE}
+#pre-processing
+df <- stock %>%
+  select(c("date","close")) %>%
+  rename(ds = date, y = close)
+
+#predictions
+m <- prophet(df)
+future <- make_future_dataframe(m, periods = 365) %>% filter(!wday(ds) %in% c(1,7)) #account for regular gaps on weekends
+forecast <- predict(m, future) 
+datatable(forecast[c('ds','yhat','yhat_lower','yhat_upper')])
+```
+
+### Prophet Forecast Results
+
+The results of the time series forecasting are plotted below. For most stocks, it seems like Prophet was able to capture the trends in close prices, but fails to forecast sharp changes in price.
+
+```{r prophet-plot}
+plot(m, forecast, xlabel = "date", ylabel = "stock close price ($)") + ggtitle(paste0(symbol, ": Stock Price Prediction"))
+```
+
+### Forecast Evaluation
+
+To further evaluate the forecast results, a residual plot is created. Based on the residual plot, it is evident that this forecast does not capture all of the variability in stock prices over time.
+
+```{r prophet2}
+forecast$ds <- as_date(forecast$ds)
+
+residuals <- df %>% 
+  left_join(forecast[c('ds','yhat','yhat_lower','yhat_upper')], by = "ds") %>%
+  filter(ds < today()) %>%
+  mutate(res = (y-yhat))
+datatable(residuals)
+ggplot(residuals, aes(ds, res)) + geom_point() + geom_hline(yintercept =0, color = "red") + labs(title ="Prophet Forecasting Residuals", x = "date", y = "residual") 
+```
+
+## Next steps
+
+* Create this code as a function (inputs = symbol and API keys)
+* Create interactive Shiny application
+* Integrate relational or NoSQL database
+* Multiple regression using various economic indicators (maybe use bea.R package data)
+* More advanced sentiment analysis of news articles
+* Other time series forecasting methods (**ARIMA**)
+* Tinker with Prophet forecasting (maybe add Test-train-split?)
+* Compare the forecast to the stock index

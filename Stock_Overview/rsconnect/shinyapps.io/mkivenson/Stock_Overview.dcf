@@ -1,0 +1,13 @@
+name: Stock_Overview
+title: Stock_Overview
+username:
+account: mkivenson
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 925238
+bundleId: 2078936
+url: https://mkivenson.shinyapps.io/Stock_Overview/
+when: 1557693353.61712
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData

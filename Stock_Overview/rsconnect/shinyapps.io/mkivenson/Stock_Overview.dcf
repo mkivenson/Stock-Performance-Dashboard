@@ -5,9 +5,9 @@ account: mkivenson
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 925238
-bundleId: 2078936
+bundleId: 2117453
 url: https://mkivenson.shinyapps.io/Stock_Overview/
-when: 1557693353.61712
+when: 1559192354.12017
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: .RData

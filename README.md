@@ -10,3 +10,6 @@ This project will use a trading data API to obtain historical stock price data t
 * Perform sentiment analysis on recent news articles about the selected stock
 * Create a time series forecasting model that uses historical stock prices to predict future trends
 * Develop a Shiny application that condenses this information into a single dashboard for any selected stock
+
+Stock Overview for AMZN: http://rpubs.com/mkivenson/stocks
+Stock R Shiny Dashboard (interactive but takes ~20 seconds to load):https://mkivenson.shinyapps.io/Stock_Overview/ 

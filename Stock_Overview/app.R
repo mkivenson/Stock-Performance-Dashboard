@@ -140,15 +140,19 @@ header <- dashboardHeader(title = "Stock Overview", titleWidth = 350)
 
 ui <- dashboardPage(header, sidebar, body, skin = "blue", useShinyjs())
 
+
+
 # Define server logic required to draw a histogram
 server <- function(input, output) {
+  date_from <- today()-dyears(5)
+  keys <- fromJSON('config.json')
+  stock_apikey <- keys$stock_apikey
+  news_apikey <- keys$news_apikey
+  
   observeEvent(input$calcbtn, {
     output$plot1 <- renderText({"Loading"})
       symbol <- input$symbol    
-      date_from <- today()-dyears(5)
-      keys <- fromJSON('config.json')
-      stock_apikey <- keys$stock_apikey
-      news_apikey <- keys$news_apikey
+      
       URL <- paste0("https://api.marketstack.com/v1/eod?access_key=", stock_apikey,
                     "&symbols=",symbol,
                     "&sort=DESC&date_from=",date_from,

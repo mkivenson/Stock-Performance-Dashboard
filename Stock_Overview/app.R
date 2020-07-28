@@ -146,27 +146,30 @@ server <- function(input, output) {
     output$plot1 <- renderText({"Loading"})
       symbol <- input$symbol    
       date_from <- today()-dyears(5)
-      stock_apikey <- "WjjoZiJkDMG6cyZL2gBV1dJwifCWHHkvdF2TqNeUIVC52WCZflD0WyHG5hRS"
-      news_apikey <- "3d15ca98f7d842cf9ee90598e903ed5a"
-      URL <- paste0("https://www.worldtradingdata.com/api/v1/history?symbol=",symbol,
-                    "&sort=newest&date_from=",date_from,
-                    "&api_token=",stock_apikey)
+      keys <- fromJSON('config.json')
+      stock_apikey <- keys$stock_apikey
+      news_apikey <- keys$news_apikey
+      URL <- paste0("https://api.marketstack.com/v1/eod?access_key=", stock_apikey,
+                    "&symbols=",symbol,
+                    "&sort=DESC&date_from=",date_from,
+                    "&api_token=",stock_apikey,
+                    "&limit=1000")
       results <- GET(url = URL)
       content <- content(results, "text")
       content %<>%
         fromJSON(flatten = TRUE) %>% #Flatten
         as.data.frame() #Make dataframe
-      stock <- gather(content, "time","value",2:ncol(content)) 
-      stock$value <- as.numeric(stock$value)
+      content <- content[5:ncol(content)]
       
       #extract the date and metric into a new field
-      stock$date <- as_date(str_extract(string = stock$time, pattern = "\\d{4}.\\d{2}.\\d{2}"))
-      stock$metric <- str_extract(string = stock$time, pattern = "open|close|high|low|volume")
-      
-      #exclude the unneccessary column and spread metric columns
-      stock %<>%
-        select(c(name, date, metric, value)) %>%
-        spread(metric, value)
+      content$name <- content$data.symbol
+      content$date <- as_date(str_extract(string = content$data.date, pattern = "\\d{4}-\\d{2}-\\d{2}"))
+      content$open <- content$data.open
+      content$close <- content$data.close
+      content$high <- content$data.high
+      content$low <- content$data.low
+      content$volume <- content$data.volume
+      stock <- content[14:20]
       
       trends <- gtrends(keyword = symbol, geo = "US", onlyInterest = TRUE)
       trends <- trends$interest_over_time %>%
@@ -209,9 +212,9 @@ server <- function(input, output) {
       
       sentiment_summary <- news_words %>%
         left_join(afinn) %>%
-        filter(!is.na(score)) %>%
+        filter(!is.na(value)) %>%
         group_by(articles.title, date) %>%
-        summarise(score = mean(score)) %>%
+        summarise(score = mean(value)) %>%
         mutate(sentiment = ifelse(score>0, "positive","negative")) 
       
       #pre-processing

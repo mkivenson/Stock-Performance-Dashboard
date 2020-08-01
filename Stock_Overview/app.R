@@ -144,10 +144,6 @@ ui <- dashboardPage(header, sidebar, body, skin = "blue", useShinyjs())
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
-  date_from <- today()-dyears(5)
-  keys <- fromJSON('config.json')
-  stock_apikey <- keys$stock_apikey
-  news_apikey <- keys$news_apikey
   
   observeEvent(input$calcbtn, {
     output$plot1 <- renderText({"Loading"})
@@ -272,20 +268,20 @@ server <- function(input, output) {
                      showgrid = TRUE,
                      showticklabels = TRUE))
     p2 <- stock %>%
-      plot_ly(x=~date, y=~volume, type='bar', name = "Volume") %>%
+      plot_ly(x=~date, y=~volume, type='bar', name = "Volume", height = 350) %>%
       layout(yaxis = list(title = "Volume"))
     
     plot1 <- subplot(p1, p2, heights = c(0.6,0.4), nrows=2,
                  shareX = TRUE, titleY = TRUE, titleX = FALSE) %>%
-      layout(title = paste0(symbol), legend = list(orientation = 'h', xanchor = "center", x = 0.5), height = 350)
+      layout(title = paste0(symbol), legend = list(orientation = 'h', xanchor = "center", x = 0.5))
     plot1
 })
   
     
 output$plot2 <- renderPlotly({
       plot2 <- trends %>%  
-      plot_ly(x=~date, y=~hits, mode = 'lines', name = "Google Search Trends") %>%
-      layout(title = paste0(symbol, ": Interest over Time"), yaxis = list(title = "Google Trends Hits"), height = 300)
+      plot_ly(x=~date, y=~hits, mode = 'lines', name = "Google Search Trends", height = 300) %>%
+      layout(title = paste0(symbol, ": Interest over Time"), yaxis = list(title = "Google Trends Hits"))
       plot2
 })
     

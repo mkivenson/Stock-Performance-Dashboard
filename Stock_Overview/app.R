@@ -303,18 +303,26 @@ server <- function(input, output) {
       news %<>%
         fromJSON(flatten = TRUE) %>% #flatten
         as.data.frame() %>% #make dataframe
-        select(c(articles.title, articles.description, articles.content, articles.publishedAt))
+        unique()
+      news$date <- as.Date(news$articles.publishedAt)
+      news <- select(news, c("articles.title", "articles.description", "articles.content", "date"))
       
       
+      output$table2 <- renderDataTable({
+        datatable(select(news, c("articles.title", "articles.description","date")), 
+                  options = list(pageLength = 100), 
+                  fillContainer = TRUE,
+                  rownames = FALSE)
+      })
       
+
       news_words <- news %>%
-        select(c("articles.title","articles.description", "articles.content", "articles.publishedAt")) %>%
+        select(c("articles.title","articles.description", "articles.content", "date")) %>%
         unnest_tokens(word, articles.description) %>%
         filter(!word %in% append(stop_words$word, values = "chars"), str_detect(word, "^[a-z']+$"))
-      news_words$date <- as.Date(news_words$articles.publishedAt)
       
-      words_only <- news_words %>%
-        count(word, sort =TRUE)
+      #words_only <- news_words %>%
+      #  count(word, sort =TRUE)
       afinn <- read_csv("./www/afinn.csv")
       
       sentiment_summary <- news_words %>%
@@ -324,13 +332,6 @@ server <- function(input, output) {
         summarise(score = mean(value)) %>%
         mutate(sentiment = ifelse(score>0, "positive","negative")) 
       
-      
-      output$table2 <- renderDataTable({
-        datatable(select(news, c("articles.title", "articles.description","articles.publishedAt")), 
-                  options = list(pageLength = 100), 
-                  fillContainer = TRUE,
-                  rownames = FALSE)
-      })
       
       output$plot5 <- renderPlotly({
         plot5 <- ggplot(sentiment_summary, aes(date, score)) + 

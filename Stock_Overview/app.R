@@ -120,7 +120,7 @@ The steps taken to create this dashboard include the following:",
 
 sidebar <- dashboardSidebar(
   width = 350,
-    sidebarMenu(
+    sidebarMenu(id = "sbmenu",
       menuItem("Inputs", icon = icon("font"), startExpanded = TRUE,
                textInput("symbol", "Enter a Stock Ticker", value = "AMZN"),
                actionButton("calcbtn", "Calculate"),
@@ -144,6 +144,9 @@ ui <- dashboardPage(header, sidebar, body, skin = "blue", useShinyjs())
 server <- function(input, output) {
   #stockRVal = reactiveVal()
   
+  stock <- NULL
+  symbol <- NULL
+  
   stock_apikey <- "4fc4e53763fd282cdc3b98d9283cd0f8"
   news_apikey <- "3d15ca98f7d842cf9ee90598e903ed5a"
   date_from <- Sys.Date() - 1825
@@ -154,231 +157,220 @@ server <- function(input, output) {
   #})
   
   observeEvent(input$calcbtn, {
-  output$plot1 <- renderText({"Loading"})
-  output$plot2 <- renderText({"Loading"})
-  output$plot3 <- renderText({"Loading"})
-  output$plot4 <- renderText({"Loading"})
-  output$plot5 <- renderText({"Loading"})
-  output$plot6 <- renderText({"Loading"})
-  output$plot7 <- renderText({"Loading"})
-  output$table1 <- renderText({"Loading"})
-  output$table2 <- renderText({"Loading"})
-  symbol <- input$symbol    
-  
-  #keys <- fromJSON('config.json')
-  g <- rnorm(100000)
-  h <- rep(NA, 100000)
-  ptm <- proc.time()
-  h <- g + 1
-  URL <- paste0("https://api.marketstack.com/v1/eod?access_key=", stock_apikey,
-                "&symbols=",symbol,
-                "&sort=DESC&date_from=",date_from,
-                "&limit=1000")
-  results <- GET(url = URL)
-  content <- content(results, "text")
-  content %<>%
-    fromJSON(flatten = TRUE) %>% #Flatten
-    as.data.frame() #Make dataframe
-  content <- content[5:ncol(content)]
-  
-  #extract the date and metric into a new field
-  content$name <- content$data.symbol
-  content$date <- as.Date(str_extract(string = content$data.date, pattern = "\\d{4}-\\d{2}-\\d{2}"))
-  content$open <- content$data.open
-  content$close <- content$data.close
-  content$high <- content$data.high
-  content$low <- content$data.low
-  content$volume <- content$data.volume
-  stock <- content[14:20]
-  #stockRVal(stock)
-  trends <- gtrends(keyword = symbol, geo = "US", onlyInterest = TRUE)
-  trends <- trends$interest_over_time %>%
-    as_data_frame() %>%
-    select(c(date, hits, keyword))
-  trends$date <- as.Date(cut(as.Date(trends$date), "week"))
-  
-  
-  t1 = proc.time() - ptm
-  ptm <- proc.time()
-  ##get company name using web-scraping
-  url_overview = paste0("https://www.marketwatch.com/investing/stock/",symbol,"/profile")
-  var_overview = read_html(url_overview)
-  company <-  var_overview %>% 
-    html_nodes('#instrumentname') %>%
-    html_text() %>%
-    as.character()
-  
-  t2 = proc.time() - ptm
-  ptm <- proc.time()
-  #news API Query
-  url_news = paste0("https://newsapi.org/v2/everything?q=",
-                    str_replace_all(company,pattern = " ", replacement = "%20"),
-                    "&from=",Sys.Date() - 30, #last 30 days
-                    "&sortBy=relevance&pageSize=100&language=en&apiKey=",news_apikey)
-  
-  
-  t3 = proc.time() - ptm
-  ptm <- proc.time()
-  #API json to datatable
-  results <- GET(url = url_news)
-  news <- content(results, "text")
-  news %<>%
-    fromJSON(flatten = TRUE) %>% #flatten
-    as.data.frame() %>% #make dataframe
-    select(c(articles.title, articles.description, articles.content, articles.publishedAt))
-  news_words <- news %>%
-    select(c("articles.title","articles.description", "articles.content", "articles.publishedAt")) %>%
-    unnest_tokens(word, articles.description) %>%
-    filter(!word %in% append(stop_words$word, values = "chars"), str_detect(word, "^[a-z']+$"))
-  news_words$date = as.Date(news_words$articles.publishedAt)
-  
-  words_only <- news_words %>%
-    count(word, sort =TRUE)
-  afinn <- read_csv("./www/afinn.csv")
-  
-  
-  t4 = proc.time() - ptm
-  ptm <- proc.time()
-  sentiment_summary <- news_words %>%
-    left_join(afinn) %>%
-    filter(!is.na(value)) %>%
-    group_by(articles.title, date) %>%
-    summarise(score = mean(value)) %>%
-    mutate(sentiment = ifelse(score>0, "positive","negative")) 
-  
-  #pre-processing
-  df <- stock %>%
-    select(c("date","close")) %>%
-    rename(ds = date, y = close)
-  
-  
-  t5 = proc.time() - ptm
-  ptm <- proc.time()
-  #predictions
-  m <- prophet(df, uncertainty.samples = 1000)
-  #print('made prophet df')
-  future <- make_future_dataframe(m, periods = 365) %>% filter(!wday(ds) %in% c(1,7)) #account for regular gaps on weekends
-  #print('made future df')
-  forecast <- predict(m, future) 
-  #print('made prediction')
-  
-  t6 = proc.time() - ptm
-  ptm <- proc.time()
-  print(paste('t1:', t1))
-  print(paste('t2:', t2))
-  print(paste('t3:', t3))
-  print(paste('t4:', t4))
-  print(paste('t5:', t5))
-  print(paste('t6:', t6))
+    output$plot1 <- renderText({"Loading"})
+    output$plot2 <- renderText({"Loading"})
+    output$plot3 <- renderText({"Loading"})
+    output$plot4 <- renderText({"Loading"})
+    output$plot5 <- renderText({"Loading"})
+    output$plot6 <- renderText({"Loading"})
+    output$plot7 <- renderText({"Loading"})
+    output$table1 <- renderText({"Loading"})
+    output$table2 <- renderText({"Loading"})
+    symbol <<- input$symbol    
     
-  output$plot1 <- renderPlotly({
-      p1 <- stock %>%
-        plot_ly(x = ~date,
-                type = "candlestick", 
-                open = ~open, 
-                close = ~close, 
-                high = ~high,
-                low = ~low,
-                name = "price") %>%
-        layout(
-          xaxis = list(
-            rangeselector = list(
-              buttons = list(
-                list(
-                  count = 1,
-                  label = "1 mo",
-                  step = "week",
-                  stepmode = "backward"),
-                list(
-                  count = 6,
-                  label = "6 mo",
-                  step = "month",
-                  stepmode = "backward"),
-                list(
-                  count = 1,
-                  label = "1 yr",
-                  step = "year",
-                  stepmode = "backward"),
-                list(
-                  count = 3,
-                  label = "3 yr",
-                  step = "year",
-                  stepmode = "backward"),
-                list(step = "all"))),
-            rangeslider = list(visible = FALSE)),
-          yaxis = list(title = "Price ($)",
-                       showgrid = TRUE,
-                       showticklabels = TRUE))
-      p2 <- stock %>%
-        plot_ly(x=~date, y=~volume, type='bar', name = "Volume", height = 350) %>%
-        layout(yaxis = list(title = "Volume"))
-      
-      plot1 <- subplot(p1, p2, heights = c(0.6,0.4), nrows=2,
-                   shareX = TRUE, titleY = TRUE, titleX = FALSE) %>%
-        layout(title = paste0(symbol), legend = list(orientation = 'h', xanchor = "center", x = 0.5))
-      plot1
-  })
+    #keys <- fromJSON('config.json')
+    URL <- paste0("https://api.marketstack.com/v1/eod?access_key=", stock_apikey,
+                  "&symbols=",symbol,
+                  "&sort=DESC&date_from=",date_from,
+                  "&limit=1000")
+    results <- GET(url = URL)
+    content <- content(results, "text")
+    content %<>%
+      fromJSON(flatten = TRUE) %>% #Flatten
+      as.data.frame() #Make dataframe
+    content <- content[5:ncol(content)]
     
+    #extract the date and metric into a new field
+    content$name <- content$data.symbol
+    content$date <- as.Date(content$data.date)
+    content$open <- content$data.open
+    content$close <- content$data.close
+    content$high <- content$data.high
+    content$low <- content$data.low
+    content$volume <- content$data.volume
+    stock <<- content[14:20]
+    
+
+  
+  observeEvent(input$sbmenu, {  #Not triggering
+    print(input$sbmenu)
+    if(input$sbmenu=="historical"){
+      output$plot1 <- renderPlotly({
+        p1 <- stock %>%
+          plot_ly(x = ~date,
+                  type = "candlestick", 
+                  open = ~open, 
+                  close = ~close, 
+                  high = ~high,
+                  low = ~low,
+                  name = "price") %>%
+          layout(
+            xaxis = list(
+              rangeselector = list(
+                buttons = list(
+                  list(
+                    count = 1,
+                    label = "1 mo",
+                    step = "week",
+                    stepmode = "backward"),
+                  list(
+                    count = 6,
+                    label = "6 mo",
+                    step = "month",
+                    stepmode = "backward"),
+                  list(
+                    count = 1,
+                    label = "1 yr",
+                    step = "year",
+                    stepmode = "backward"),
+                  list(
+                    count = 3,
+                    label = "3 yr",
+                    step = "year",
+                    stepmode = "backward"),
+                  list(step = "all"))),
+              rangeslider = list(visible = FALSE)),
+            yaxis = list(title = "Price ($)",
+                         showgrid = TRUE,
+                         showticklabels = TRUE))
+        p2 <- stock %>%
+          plot_ly(x=~date, y=~volume, type='bar', name = "Volume", height = 350) %>%
+          layout(yaxis = list(title = "Volume"))
+        
+        plot1 <- subplot(p1, p2, heights = c(0.6,0.4), nrows=2,
+                         shareX = TRUE, titleY = TRUE, titleX = FALSE) %>%
+          layout(title = paste0(symbol), legend = list(orientation = 'h', xanchor = "center", x = 0.5))
+        plot1
+      })
       
-  output$plot2 <- renderPlotly({
+      
+      output$table1 <- renderDataTable({
+        datatable(stock, options = list(pageLength = 5), rownames = FALSE)
+      })
+    }
+    
+    else if(input$sbmenu=="interest"){
+      
+      #GET GOOGLE TRENDS DATA
+      trends <- gtrends(keyword = symbol, geo = "US", onlyInterest = TRUE)
+      trends <- trends$interest_over_time %>%
+        as_data_frame() %>%
+        select(c(date, hits, keyword))
+      trends$date <- as.Date(cut(as.Date(trends$date), "week"))
+      
+      output$plot2 <- renderPlotly({
         plot2 <- trends %>%  
-        plot_ly(x=~date, y=~hits, mode = 'lines', name = "Google Search Trends", height = 300) %>%
-        layout(title = paste0(symbol, ": Interest over Time"), yaxis = list(title = "Google Trends Hits"))
+          plot_ly(x=~date, y=~hits, mode = 'lines', name = "Google Search Trends", height = 300) %>%
+          layout(title = paste0(symbol, ": Interest over Time"), yaxis = list(title = "Google Trends Hits"))
         plot2
-  })
+      })
+
+      output$plot3 <- renderPlotly({
+        plot3 <- trends %>%
+          left_join(stock, by = "date") %>%
+          select(one_of(c("date", "hits", "close"))) %>%
+          drop_na() %>%
+          ggplot(aes(hits, close)) + geom_point(color="blue") + geom_smooth(model=lm, color = "black") +
+          labs(title = paste0(symbol,": Relationship between Hits and Close Stock Price"), 
+               x = "Google Trends Hits", 
+               y = "Close Price")
+        plot3
+      })
       
-  output$plot3 <- renderPlotly({
-      plot3 <- trends %>%
-        left_join(stock, by = "date") %>%
-        select(one_of(c("date", "hits", "close"))) %>%
-        drop_na() %>%
-        ggplot(aes(hits, close)) + geom_point(color="blue") + geom_smooth(model=lm, color = "black") +
-        labs(title = paste0(symbol,": Relationship between Hits and Close Stock Price"), 
-             x = "Google Trends Hits", 
-             y = "Close Price")
-      plot3
-    })
-  
-  output$plot4 <- renderPlot({
-    plot4 <- wordcloud(words = words_only$word, freq = words_only$n, scale=c(3,.3), max.words=50, colors=brewer.pal(8, "Dark2"))
-    plot4
+      #output$plot4 <- renderPlot({
+      #  plot4 <- wordcloud(words = words_only$word, freq = words_only$n, scale=c(3,.3), max.words=50, colors=brewer.pal(8, "Dark2"))
+      #  plot4
+      #})
+    }
+    
+    else if(input$sbmenu=="news"){
+      ##get company name using web-scraping
+      url_overview = paste0("https://www.marketwatch.com/investing/stock/",symbol,"/profile")
+      var_overview = read_html(url_overview)
+      company <-  var_overview %>% 
+        html_nodes('#instrumentname') %>%
+        html_text() %>%
+        as.character()
+      
+      #news API Query
+      url_news = paste0("https://newsapi.org/v2/everything?q=",
+                        str_replace_all(company,pattern = " ", replacement = "%20"),
+                        "&from=",Sys.Date() - 30, #last 30 days
+                        "&sortBy=relevance&pageSize=100&language=en&apiKey=",news_apikey)
+      #API json to datatable
+      results <- GET(url = url_news)
+      news <- content(results, "text")
+      news %<>%
+        fromJSON(flatten = TRUE) %>% #flatten
+        as.data.frame() %>% #make dataframe
+        select(c(articles.title, articles.description, articles.content, articles.publishedAt))
+      
+      
+      
+      news_words <- news %>%
+        select(c("articles.title","articles.description", "articles.content", "articles.publishedAt")) %>%
+        unnest_tokens(word, articles.description) %>%
+        filter(!word %in% append(stop_words$word, values = "chars"), str_detect(word, "^[a-z']+$"))
+      news_words$date <- as.Date(news_words$articles.publishedAt)
+      
+      words_only <- news_words %>%
+        count(word, sort =TRUE)
+      afinn <- read_csv("./www/afinn.csv")
+      
+      sentiment_summary <- news_words %>%
+        left_join(afinn) %>%
+        filter(!is.na(value)) %>%
+        group_by(articles.title, date) %>%
+        summarise(score = mean(value)) %>%
+        mutate(sentiment = ifelse(score>0, "positive","negative")) 
+      
+      
+      output$table2 <- renderDataTable({
+        datatable(select(news, c("articles.title", "articles.description","articles.publishedAt")), 
+                  options = list(pageLength = 100), 
+                  fillContainer = TRUE,
+                  rownames = FALSE)
+      })
+      
+      output$plot5 <- renderPlotly({
+        plot5 <- ggplot(sentiment_summary, aes(date, score)) + 
+          geom_bar(stat = "identity", aes(fill=sentiment))  + 
+          ggtitle(paste0(symbol, ": News Sentiment Over Time")) +
+          theme(legend.position = "bottom")
+        plot5
+      })
+    }
+    else if(input$sbmenu=="forecast"){
+      #pre-processing
+      df <- stock %>%
+        select(c("date","close")) %>%
+        rename(ds = date, y = close)
+      
+      #predictions
+      m <- prophet(df, uncertainty.samples = 100)
+      future <- make_future_dataframe(m, periods = 365) %>% filter(!wday(ds) %in% c(1,7)) #account for regular gaps on weekends
+      forecast <- predict(m, future) 
+      
+      #plot predictions 1 
+      output$plot6 <- renderPlotly({
+        plot6 <- plot(m, forecast, xlabel = "date", ylabel = "stock close price ($)") + ggtitle(paste0(symbol, ": Prophet Stock Price Prediction"))
+        plot6
+      })
+      
+      #plot predictions 2
+      output$plot7 <- renderPlotly({
+        forecast$ds <- as.Date(forecast$ds)
+        plot7 <- df %>% 
+          left_join(forecast[c('ds','yhat','yhat_lower','yhat_upper')], by = "ds") %>%
+          filter(ds < Sys.Date()) %>%
+          mutate(res = (y-yhat)) %>%
+          ggplot(aes(ds, res)) + geom_point() + geom_hline(yintercept =0, color = "red") + labs(title =paste0(symbol, ": Prophet Forecasting Residuals"), x = "date", y = "residual") 
+        plot7
+      })
+    }
   })
   
-  output$plot5 <- renderPlotly({
-    plot5 <- ggplot(sentiment_summary, aes(date, score)) + 
-      geom_bar(stat = "identity", aes(fill=sentiment))  + 
-      ggtitle(paste0(symbol, ": News Sentiment Over Time")) +
-      theme(legend.position = "bottom")
-    plot5
-  })
-  
-  # table 1 old location
-  output$table1 <- renderDataTable({
-    datatable(stock, options = list(pageLength = 5), rownames = FALSE)
-  })
-  
-  output$table2 <- renderDataTable({
-    datatable(select(news, c("articles.title", "articles.description","articles.publishedAt")), 
-              options = list(pageLength = 100), 
-              fillContainer = TRUE,
-              rownames = FALSE)
-  })
-  
-  output$plot6 <- renderPlotly({
-    plot6 <- plot(m, forecast, xlabel = "date", ylabel = "stock close price ($)") + ggtitle(paste0(symbol, ": Prophet Stock Price Prediction"))
-    plot6
-  })
-  
-  output$plot7 <- renderPlotly({
-    forecast$ds <- as.Date(forecast$ds)
-    plot7 <- df %>% 
-      left_join(forecast[c('ds','yhat','yhat_lower','yhat_upper')], by = "ds") %>%
-      filter(ds < Sys.Date()) %>%
-      mutate(res = (y-yhat)) %>%
-      ggplot(aes(ds, res)) + geom_point() + geom_hline(yintercept =0, color = "red") + labs(title =paste0(symbol, ": Prophet Forecasting Residuals"), x = "date", y = "residual") 
-    plot7
-  })
-    })
+})
   
 
 click("calcbtn")

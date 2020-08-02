@@ -135,7 +135,7 @@ sidebar <- dashboardSidebar(
   )
 
 header <- dashboardHeader(title = "Stock Overview", titleWidth = 350)
-
+options(spinner.color="#0275D8", spinner.color.background="#ffffff", spinner.size=2)
 ui <- dashboardPage(header, sidebar, body, skin = "blue", useShinyjs())
 
 
@@ -146,9 +146,9 @@ server <- function(input, output) {
   
   stock <- NULL
   symbol <- NULL
-  
-  stock_apikey <- "4fc4e53763fd282cdc3b98d9283cd0f8"
-  news_apikey <- "3d15ca98f7d842cf9ee90598e903ed5a"
+  key <- fromJSON(txt = "www/config.json")
+  stock_apikey <- key$stock_apikey
+  news_apikey <- key$news_apikey
   date_from <- Sys.Date() - 1825
   
   
@@ -160,15 +160,13 @@ server <- function(input, output) {
     output$plot1 <- renderText({"Loading"})
     output$plot2 <- renderText({"Loading"})
     output$plot3 <- renderText({"Loading"})
-    output$plot4 <- renderText({"Loading"})
     output$plot5 <- renderText({"Loading"})
     output$plot6 <- renderText({"Loading"})
     output$plot7 <- renderText({"Loading"})
     output$table1 <- renderText({"Loading"})
     output$table2 <- renderText({"Loading"})
     symbol <<- input$symbol    
-    
-    #keys <- fromJSON('config.json')
+
     URL <- paste0("https://api.marketstack.com/v1/eod?access_key=", stock_apikey,
                   "&symbols=",symbol,
                   "&sort=DESC&date_from=",date_from,
@@ -228,7 +226,8 @@ server <- function(input, output) {
                     label = "3 yr",
                     step = "year",
                     stepmode = "backward"),
-                  list(step = "all"))),
+                  list(step = "all",
+                       label = "max"))),
               rangeslider = list(visible = FALSE)),
             yaxis = list(title = "Price ($)",
                          showgrid = TRUE,
